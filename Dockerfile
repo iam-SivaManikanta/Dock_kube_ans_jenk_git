@@ -1,11 +1,17 @@
-FROM node:alpine3.20
+# Use an official Python image
+FROM python:latest
 
+# Set the working directory inside the container
 WORKDIR /app
 
-COPY . /app
+# Copy the current directory contents into the container
+COPY . .
 
-RUN npm install
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Expose the application port
 EXPOSE 5000
 
-CMD ["npm","start"]
+# Run the application
+CMD ["python", "app.py"]
