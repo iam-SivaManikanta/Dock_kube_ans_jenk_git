@@ -1,0 +1,60 @@
+ansible_server_private_ip="172.31.15.45"
+kubernetes_server_private_ip="172.31.39.37"
+
+node{
+    stage('Git checkout'){
+        git branch: 'master', url: 'https://github.com/iam-SivaManikanta/kub-ans-dcker-jenkins.git'
+    }
+    
+     //all below sshagent variables created using Pipeline syntax
+    stage('Sending Dockerfile to Ansible server'){
+        sshagent(['ansible']) {
+            sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 "
+            sh "scp /var/lib/jenkins/workspace/job_name/* ubuntu@172.31.15.45:/home/ubuntu"
+        }
+    }
+    
+    stage('Docker build image'){
+        sshagent(['ansible']) {
+         //building docker image starts
+            sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 cd /home/ubuntu/"
+            sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 docker image build -t $JOB_NAME:v-$BUILD_ID ."
+         //building docker image ends
+         //Tagging docker image starts
+            sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 docker image tag $JOB_NAME:v-$BUILD_ID mani937/$JOB_NAME:v-$BUILD_ID"
+         sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 docker image tag $JOB_NAME:v-$BUILD_ID mani937/$JOB_NAME:latest"
+         //Tagging docker image ends
+        }
+    }
+    
+    stage('push docker images to dockerhub'){
+     sshagent(['ansible']) {
+      withCredentials([usernamePassword(credentialsId: 'id', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh '''
+                            echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+                            docker image tag suiii:v-4 $DOCKER_USERNAME/suiii:v-4
+                            docker push $DOCKER_USERNAME/suiii:v-4
+                        '''
+                    }
+       //also delete old docker images
+       sh "ssh -o StrictHostKeyChecking=no ubuntu@${ansible_server_private_ip} docker image rm mani937/$JOB_NAME:v-$BUILD_ID mani937/$JOB_NAME:latest $JOB_NAME:v-$BUILD_ID"
+      }
+        }
+
+    
+    stage('Copy files from jenkins to kubernetes server'){
+     sshagent(['Kubernet']) {
+      sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.39.37 cd /home/ubuntu/"
+      sh "scp /var/lib/jenkins/workspace/suiii/* ubuntu@172.31.39.37:/home/ubuntu"
+     }
+    }
+ 
+    stage('Kubernetes deployment using ansible'){
+     sshagent(['ansible']) {
+      sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 cd /home/ubuntu/"
+      sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 ansible -m ping ${kubernetes_server_private_ip}"
+      sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.15.45 ansible-playbook ansible-playbook.yml"
+     } 
+    }
+ 
+}
